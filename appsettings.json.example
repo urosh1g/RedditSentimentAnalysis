@@ -1,0 +1,10 @@
+{
+    "Reddit": {
+        "secret": "my-reddit-app-secret",
+        "client-id": "my-reddit-app-client-id",
+        "redirect-url": "my-reddit-app-redirect-url",
+        "refresh-token": "my-reddit-app-refresh-token",
+        "access-token": "my-reddit-app-access-token",
+        "auth-url": "https://www.reddit.com/api/v1/"
+    }
+}
