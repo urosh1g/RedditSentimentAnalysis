@@ -7,8 +7,9 @@ using Microsoft.Extensions.Configuration.Json;
 public class RedditProvider
 {
     static RedditClient? client;
-    static IConfiguration config;
+    static IConfiguration? config;
     static object locker = new object();
+    private RedditProvider() {}
     public static RedditClient GetProvider()
     {
         lock (locker)
