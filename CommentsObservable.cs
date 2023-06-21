@@ -8,10 +8,12 @@ using System.Reactive.Disposables;
 public class CommentsObservable : IObservable<Comment>
 {
     string subreddit;
+    int numComments;
     RedditClient client;
-    public CommentsObservable(string subreddit)
+    public CommentsObservable(string subreddit, int numComments)
     {
         this.subreddit = subreddit;
+        this.numComments = numComments;
         client = RedditProvider.GetProvider();
     }
     public IDisposable Subscribe(IObserver<Comment> observer)
@@ -19,7 +21,7 @@ public class CommentsObservable : IObservable<Comment>
         List<Comment>? comments = null;
         try
         {
-            comments = client.Subreddit(subreddit).Comments.GetComments(limit: 100, sort: "top");
+            comments = client.Subreddit(subreddit).Comments.GetComments(limit: numComments, sort: "top");
         }
         catch (Exception ex)
         {
