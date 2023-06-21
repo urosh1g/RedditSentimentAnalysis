@@ -1,9 +1,10 @@
 using System.Net;
 using System.Reactive;
+using System.Reactive.Linq;
 using System.Reactive.Concurrency;
-using System.Reactive.Disposables;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Configuration.Json;
+using Newtonsoft.Json;
+using System.Text;
+using VaderSharp;
 
 using Extensions;
 
@@ -46,23 +47,68 @@ public class WebServer
     private void HandleRequest(HttpListenerContext context)
     {
         var response = context.Response;
+        var request = context.Request;
+        int numComments;
+        if (!int.TryParse(request.QueryString["numComments"], out numComments))
+        {
+            numComments = 10;
+        }
         string[] subreddits;
+        Dictionary<string, List<SentimentAnalysisResults>> comments = new Dictionary<string, List<SentimentAnalysisResults>>();
+        CountdownEvent countdownEvent;
+        SentimentIntensityAnalyzer analyzer = new SentimentIntensityAnalyzer();
 
-        LogRequest(context.Request);
-        subreddits = context.Request.RawUrl!.Split(',');
-        subreddits[0] = subreddits[0].Substring(1);
-        CommentsObservable obs = new CommentsObservable(subreddits[0]);
-        obs.Subscribe(Observer.Create<Reddit.Controllers.Comment>(
-            (comment) => {
-                Console.WriteLine($"{comment.Author}: {comment.Body}");
-            }, 
-            (exception) => {
-                Console.WriteLine($"Error {exception.Message}");
-            }, 
-            () => {
-                Console.WriteLine("Completed!");
-            }));
-        response.OutputStream.Close();
+        try
+        {
+            LogRequest(context.Request);
+            var querySubs = request.QueryString["subreddits"];
+            if(querySubs == null){
+                throw new Exception("No subreddits provided!");
+            }
+            subreddits = querySubs.Split(',');
+            countdownEvent = new CountdownEvent(subreddits.Length);
+            foreach (string subreddit in subreddits)
+            {
+                CommentsObservable commentsStream = new CommentsObservable(subreddit, numComments);
+                var observer = Observer.Create<SentimentAnalysisResults>(
+                    (comment) =>
+                    {
+                        if (!comments.ContainsKey(subreddit))
+                        {
+                            comments.Add(subreddit, new List<SentimentAnalysisResults>());
+                        }
+                        comments[subreddit].Add(comment);
+                    },
+                    (error) =>
+                    {
+                        Console.WriteLine($"{subreddit} Error {error.Message}");
+                    },
+                    () =>
+                    {
+                        Console.WriteLine($"{subreddit} Completed!");
+                        countdownEvent.Signal();
+                    });
+                commentsStream.SubscribeOn(Scheduler.NewThread)
+                .Select(comment => comment.Body)
+                .Select(commentBody =>
+                {
+                    var result = analyzer.PolarityScores(commentBody);
+                    return result;
+                })
+                .Subscribe(observer);
+            }
+            countdownEvent.Wait();
+            var bytes = Encoding.ASCII.GetBytes(JsonConvert.SerializeObject(comments, Formatting.Indented));
+            response.ContentLength64 = bytes.Length;
+            response.ContentType = "application/json";
+            response.OutputStream.Write(bytes);
+        }
+        catch (Exception ex)
+        {
+            response.OutputStream.Write(Encoding.ASCII.GetBytes(ex.Message));
+        }
+        finally{
+            response.OutputStream.Close();
+        }
     }
-
 }
