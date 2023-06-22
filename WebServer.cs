@@ -7,6 +7,7 @@ using System.Text;
 using VaderSharp;
 
 using Extensions;
+using Utils;
 
 namespace Webserver;
 
@@ -54,7 +55,7 @@ public class WebServer
             numComments = 10;
         }
         string[] subreddits;
-        Dictionary<string, List<SentimentAnalysisResults>> comments = new Dictionary<string, List<SentimentAnalysisResults>>();
+        Dictionary<string, AnalysisResult> comments = new Dictionary<string, AnalysisResult>();
         CountdownEvent countdownEvent;
         SentimentIntensityAnalyzer analyzer = new SentimentIntensityAnalyzer();
 
@@ -70,14 +71,14 @@ public class WebServer
             foreach (string subreddit in subreddits)
             {
                 CommentsObservable commentsStream = new CommentsObservable(subreddit, numComments);
-                var observer = Observer.Create<SentimentAnalysisResults>(
+                var observer = Observer.Create<Tuple<string, SentimentAnalysisResults>>(
                     (comment) =>
                     {
                         if (!comments.ContainsKey(subreddit))
                         {
-                            comments.Add(subreddit, new List<SentimentAnalysisResults>());
+                            comments.Add(subreddit, new AnalysisResult(subreddit));
                         }
-                        comments[subreddit].Add(comment);
+                        comments[subreddit].AddComment(comment.Item1, comment.Item2);
                     },
                     (error) =>
                     {
@@ -90,15 +91,11 @@ public class WebServer
                     });
                 commentsStream.SubscribeOn(Scheduler.NewThread)
                 .Select(comment => comment.Body)
-                .Select(commentBody =>
-                {
-                    var result = analyzer.PolarityScores(commentBody);
-                    return result;
-                })
+                .Select(commentBody => new Tuple<string, SentimentAnalysisResults>(commentBody, analyzer.PolarityScores(commentBody)))
                 .Subscribe(observer);
             }
             countdownEvent.Wait();
-            var bytes = Encoding.ASCII.GetBytes(JsonConvert.SerializeObject(comments, Formatting.Indented));
+            var bytes = Encoding.ASCII.GetBytes(JsonConvert.SerializeObject(comments.Values.ToList(), Formatting.Indented));
             response.ContentLength64 = bytes.Length;
             response.ContentType = "application/json";
             response.OutputStream.Write(bytes);
