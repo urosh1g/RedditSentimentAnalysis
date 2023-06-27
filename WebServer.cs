@@ -27,8 +27,14 @@ public class WebServer
 
     private void LogRequest(HttpListenerRequest request)
     {
+        Console.WriteLine("Request:");
         Console.Write($"{request.HttpMethod} {request.RawUrl}");
         Console.WriteLine(request.Headers);
+    }
+    private void LogResponse(HttpListenerResponse response) {
+        Console.WriteLine("Response:");
+        Console.WriteLine(response.Headers);
+        Console.Write($"{response.StatusCode} {response.StatusDescription}");
     }
 
     public void Start()
@@ -50,10 +56,6 @@ public class WebServer
         var response = context.Response;
         var request = context.Request;
         int numComments;
-        if (!int.TryParse(request.QueryString["numComments"], out numComments))
-        {
-            numComments = 10;
-        }
         string[] subreddits;
         Dictionary<string, AnalysisResult> comments = new Dictionary<string, AnalysisResult>();
         CountdownEvent countdownEvent;
@@ -62,9 +64,13 @@ public class WebServer
         try
         {
             LogRequest(context.Request);
+            if (!int.TryParse(request.QueryString["numComments"], out numComments))
+            {
+                numComments = 10;
+            }
             var querySubs = request.QueryString["subreddits"];
-            if(querySubs == null){
-                throw new Exception("No subreddits provided!");
+            if(querySubs == null || string.IsNullOrWhiteSpace(querySubs)){
+                throw new Exception("No subreddits provided!\n");
             }
             subreddits = querySubs.Split(',');
             countdownEvent = new CountdownEvent(subreddits.Length);
@@ -102,9 +108,11 @@ public class WebServer
         }
         catch (Exception ex)
         {
+            response.StatusCode = (int)HttpStatusCode.BadRequest;
             response.OutputStream.Write(Encoding.ASCII.GetBytes(ex.Message));
         }
         finally{
+            LogResponse(response);
             response.OutputStream.Close();
         }
     }
